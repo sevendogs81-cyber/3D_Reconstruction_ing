@@ -1,4 +1,0 @@
-pycolmap==3.13.0
-numpy
-scipy
-opencv-python
