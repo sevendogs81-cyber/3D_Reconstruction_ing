@@ -6,8 +6,7 @@ dist/
 build/
 *.egg-info/
 
-# 重建数据与产物（不推送到远程）
-mipnerf360/
+# 重建产物不推送，只保留原始数据集（images）
 *.db
 ns_processed/
 ns_runs/
@@ -15,3 +14,4 @@ ns_runs/
 **/dense/
 **/0_undistort/
 *.ply
+mipnerf360/**/my_practice_output/
