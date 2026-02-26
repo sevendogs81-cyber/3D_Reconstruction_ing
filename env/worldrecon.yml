@@ -1,0 +1,32 @@
+name: worldrecon
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - ffmpeg
+  - cmake
+  - ninja
+  - git
+  - pip:
+      - nerfstudio
+      - gsplat
+      - opencv-python
+      - open3d
+      - trimesh
+      - numpy
+      - scipy
+      - matplotlib
+      - tqdm
+      - rich
+      - imageio
+      - imageio-ffmpeg
+      - scikit-image
+      - pandas
+      # 语义相关（可选）
+      - transformers
+      - timm
+      - einops
+      - accelerate
+      - supervision
+

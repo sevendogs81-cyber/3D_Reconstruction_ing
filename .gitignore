@@ -5,3 +5,13 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# 重建数据与产物（不推送到远程）
+mipnerf360/
+*.db
+ns_processed/
+ns_runs/
+**/sparse/
+**/dense/
+**/0_undistort/
+*.ply
