@@ -258,7 +258,8 @@ OUT_DIR=$SCENE_ROOT/ns_processed
 
 ns-process-data images \
   --data $SCENE_ROOT/images \
-  --output-dir $OUT_DIR
+  --output-dir $OUT_DIR \
+  --matching-method exhaustive
 ```
 
 内部会执行：
