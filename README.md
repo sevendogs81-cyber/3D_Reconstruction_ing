@@ -20,8 +20,8 @@
 ├── env/
 │   └── worldrecon.yml            # Nerfstudio + 3DGS 等完整环境（conda）
 ├── docs/
-│   ├── 文献综述_3D_与_全景重建.md      # 3D/360 重建 & 世界模型的整体技术路径
-│   └── COLMAP_教程.md               # 从 COLMAP 到 Nerfstudio 的详细实践手册
+│   ├── 文献综述_3D_与_全景重建.md          # 3D/360 重建 & 世界模型的整体技术路径
+│   └── COLMAP_与_Nerfstudio_教程.md       # 从 COLMAP 到 Nerfstudio 的详细实践手册
 ├── mipnerf360/                   # 示例数据目录（如 db/drjohnson 等场景）
 │   └── ...                       # 建议只保留少量示例或用 .gitignore 控制
 └── src/（预留）
@@ -32,9 +32,9 @@
 
 当前重点已经实现的是：
 
-- `docs/COLMAP_教程.md`：  
+- `docs/COLMAP_与_Nerfstudio_教程.md`：  
   - 用 Mip-NeRF 360 场景示范 **COLMAP 稀疏/稠密重建完整流程**；  
-  - 在第 11 节详细给出 **Nerfstudio + COLMAP** 的联动实践（`ns-process-data` / `ns-train` / `ns-render`）。
+  - 在后续章节详细给出 **Nerfstudio + COLMAP** 的联动实践（`ns-process-data` / `ns-train` / `ns-render`）。
 - `docs/文献综述_3D_与_全景重建.md`：  
   - 从世界模型视角梳理 3D / 360 重建、NeRF、3DGS / 4DGS 的关系与演进；  
   - 给出本项目未来的扩展路线图。
@@ -88,7 +88,7 @@ conda activate worldrecon
 
 ## 从 COLMAP 到 Nerfstudio 的推荐实践路径
 
-详细步骤请阅读 `docs/COLMAP_教程.md`，这里给一个**高度概括**，方便你建立整体印象：
+详细步骤请阅读 `docs/COLMAP_与_Nerfstudio_教程.md`，这里给一个**高度概括**，方便你建立整体印象：
 
 1. **准备数据（以 Mip-NeRF 360 为例）**
    - 将某个场景（如 `db/drjohnson`）放到 `mipnerf360/` 目录下；
