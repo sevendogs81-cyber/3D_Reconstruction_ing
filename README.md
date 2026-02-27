@@ -16,7 +16,7 @@
 ```text
 3D_Reconstruction_ing/
 ├── README.md                     # 当前说明文档
-├── requirements.txt              # 最小 Python 依赖（pycolmap 等）
+├── requirements.txt              # 最小 Python 依赖（pycolmap 等，后续补全）
 ├── env/
 │   └── worldrecon.yml            # Nerfstudio + 3DGS 等完整环境（conda）
 ├── docs/
@@ -24,10 +24,10 @@
 │   └── COLMAP_与_Nerfstudio_教程.md       # 从 COLMAP 到 Nerfstudio 的详细实践手册
 ├── mipnerf360/                   # 示例数据目录（如 db/drjohnson 等场景）
 │   └── ...                       # 建议只保留少量示例或用 .gitignore 控制
-└── src/（预留）
+└── src/
     ├── pipelines/                # 封装 COLMAP / Nerfstudio / 3DGS 的 Python 管线
     ├── viz/                      # 可视化与评估脚本
-    └── world_model/              # 世界模型相关实验代码
+    └── world_model/              # 世界模型相关实验代码（SceneState 等）
 ```
 
 当前重点已经实现的是：
@@ -107,8 +107,33 @@ conda activate worldrecon
      - `ns-render ...`  → 导出视频或图像序列。
 
 4. **（可选）引入 3DGS / 4DGS 等显式表示**
-   - 使用 `gsplat` 等工具，将同一场景转换为高斯点云表示；
-   - 比较 NeRF 与 3DGS 在质量、效率、编辑友好性等方面的差异。
+   - 使用 `gsplat` 或 Nerfstudio 的 `splatfacto`，将同一场景转换为 3D 高斯云表示；
+   - 比较 NeRF 与 3DGS 在质量、效率、编辑友好性等方面的差异；
+   - 将这几种表示统一挂接到一个“静态 world model 场景状态”（`world_state.*.json`）上，便于复用。
+
+---
+
+## 静态 World Model 场景状态（Scene State）
+
+为了在“世界模型”视角下复用同一真实场景，本仓库推荐为每个场景维护一个**静态场景状态描述文件**，例如：
+
+- `mipnerf360/db/playroom/world_state.playroom.json`
+
+其核心思想是：
+
+- **统一坐标系**：通常以 COLMAP 的世界坐标系（`cameras.txt` / `images.txt` / `transforms.json`）为基准；
+- **挂接多种表示**：在同一 JSON 中记录：
+  - `representations.colmap.*`：几何层（稀疏/稠密点云）；
+  - `representations.nerfstudio.*`：NeRF / Nerfacto 的数据与训练结果；
+  - `representations.gaussians.*`：3DGS（如 `splatfacto` 或原生 3DGS）的运行目录或 checkpoint。
+
+在代码层面，可以使用 `src/world_model/scene_state.py` 中的：
+
+- `SceneState`：轻量级的场景状态数据结构；
+- `load_scene_state(...)` / `save_scene_state(...)`：读写 JSON；
+- `example_playroom_state(...)`：基于当前仓库路径构造 `playroom` 场景的示例状态。
+
+这样，你可以把 **COLMAP poses → Nerfstudio / NeRF → 3DGS** 这一条链路的所有中间结果，都纳入到一个统一的“世界记忆单元”中，后续无论做渲染、编辑还是语义实验，都只需先加载 `SceneState`。
 
 ---
 

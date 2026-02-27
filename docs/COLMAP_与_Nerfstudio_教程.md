@@ -364,3 +364,64 @@ ns-render dataset \
 
 若需要深入理解各步骤的几何含义与实现细节，可返回本教程的第 3–4 节，以及 `docs/文献综述_3D_与_全景重建.md` 中的理论综述部分。
 
+---
+
+## 八、从 Nerfstudio 到 3DGS（splatfacto）与静态场景状态
+
+在完成 **COLMAP → Nerfstudio** 之后，可以进一步使用 Nerfstudio 内置的 3DGS 实现（`splatfacto`）或其它工具，将同一场景转换为**高斯点云表示**，构成一个可复用的“静态 world model 场景状态”。
+
+### 8.1 使用 splatfacto 训练 3D 高斯（示例）
+
+以 `db/drjohnson` 为例，假设已经完成第 6 节中的 `ns-process-data`，并得到了：
+
+- `$SCENE_ROOT/ns_processed/`（包含 `transforms.json` 等）。
+
+则可以直接在 `worldrecon` 环境中训练 `splatfacto`：
+
+```bash
+conda activate worldrecon
+
+REPO_ROOT=/home/wenhanxiao/code/3D_Reconstruction_ing
+DATA_ROOT=$REPO_ROOT/mipnerf360
+SCENE_NAME=db/drjohnson
+SCENE_ROOT=$DATA_ROOT/$SCENE_NAME
+OUT_DIR=$SCENE_ROOT/ns_processed
+
+ns-train splatfacto \
+  --data $OUT_DIR \
+  --output-dir $SCENE_ROOT/ns_runs/drjohnson_splatfacto
+```
+
+训练输出目录中同样会包含一个 `config.yml` 和若干 checkpoint，可用于后续渲染：
+
+```bash
+RUN_DIR=$SCENE_ROOT/ns_runs/drjohnson_splatfacto
+
+ns-render dataset \
+  --load-config $RUN_DIR/config.yml \
+  --output-path $RUN_DIR/render_orbit.mp4
+```
+
+> 提示：可以根据显存情况选择 `splatfacto` 或 `splatfacto-big`，也可以通过命令行参数调节质量与速度。
+
+### 8.2 将多种表示统一到静态 Scene State
+
+为了在“世界模型”的视角下复用同一场景，本仓库推荐为每个场景维护一个 **world state JSON**，例如：
+
+- `mipnerf360/db/playroom/world_state.playroom.json`
+
+它通常包含：
+
+- `scene_id` / `root` / `coordinate_system`：场景标识、根目录与坐标系说明（一般采用 COLMAP 世界坐标）；
+- `representations.colmap.*`：几何层结果（`sparse/0`、`dense/0` 等路径）；
+- `representations.nerfstudio.*`：NeRF / Nerfacto 的 `ns_processed` 与各个 run 的 `config.yml`；
+- `representations.gaussians.*`：3DGS（如 `splatfacto` 或原生 3DGS）训练结果的目录或 checkpoint。
+
+在 Python 中，可以使用 `src/world_model/scene_state.py` 提供的：
+
+- `SceneState` 数据结构；
+- `load_scene_state(path)` / `save_scene_state(state, path)`；
+- 以及 `example_playroom_state(repo_root)`（用于生成或参考 `playroom` 场景的 world state）。
+
+这样，**COLMAP poses → Nerfstudio / NeRF → 3DGS** 这条链路上的所有中间表示，都可以在一个统一的“静态场景状态”对象中被索引和复用，为后续世界模型实验打下基础。
+

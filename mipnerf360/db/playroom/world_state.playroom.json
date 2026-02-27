@@ -1,0 +1,34 @@
+{
+  "scene_id": "mipnerf360/db/playroom",
+  "root": "/home/wenhanxiao/code/3D_Reconstruction_ing/mipnerf360/db/playroom",
+  "coordinate_system": "colmap",
+  "representations": {
+    "colmap": {
+      "sparse_root": "mipnerf360/db/playroom/sparse/0",
+      "dense_root": null
+    },
+    "nerfstudio": {
+      "processed_data": "mipnerf360/db/playroom/ns_processed",
+      "runs": {
+        "nerfacto": {
+          "config": "mipnerf360/db/playroom/ns_runs/playroom_nerfacto/ns_processed/nerfacto/2026-02-27_121137/config.yml"
+        }
+      }
+    },
+    "gaussians": {
+      "splatfacto": {
+        "run_dir": null,
+        "status": "not_trained"
+      },
+      "native_3dgs": {
+        "checkpoint": null,
+        "status": "not_trained"
+      }
+    }
+  },
+  "meta": {
+    "description": "Static world model scene state for mipnerf360/db/playroom.",
+    "version": 1
+  }
+}
+
