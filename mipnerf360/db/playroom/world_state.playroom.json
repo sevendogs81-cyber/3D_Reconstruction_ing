@@ -7,6 +7,9 @@
       "sparse_root": "mipnerf360/db/playroom/sparse/0",
       "dense_root": null
     },
+    "semantics": {
+      "semantic_scene_json": "semantic/semantic_scene.json"
+    },
     "nerfstudio": {
       "processed_data": "mipnerf360/db/playroom/ns_processed",
       "runs": {
@@ -16,14 +19,8 @@
       }
     },
     "gaussians": {
-      "splatfacto": {
-        "run_dir": null,
-        "status": "not_trained"
-      },
-      "native_3dgs": {
-        "checkpoint": null,
-        "status": "not_trained"
-      }
+      "splatfacto": {"run_dir": null, "status": "not_trained"},
+      "native_3dgs": {"checkpoint": null, "status": "not_trained"}
     }
   },
   "meta": {
@@ -31,4 +28,3 @@
     "version": 1
   }
 }
-

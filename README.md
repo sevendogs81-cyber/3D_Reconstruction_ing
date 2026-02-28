@@ -125,15 +125,17 @@ conda activate worldrecon
 - **挂接多种表示**：在同一 JSON 中记录：
   - `representations.colmap.*`：几何层（稀疏/稠密点云）；
   - `representations.nerfstudio.*`：NeRF / Nerfacto 的数据与训练结果；
-  - `representations.gaussians.*`：3DGS（如 `splatfacto` 或原生 3DGS）的运行目录或 checkpoint。
+  - `representations.gaussians.*`：3DGS（如 `splatfacto` 或原生 3DGS）的运行目录或 checkpoint；
+  - `representations.semantics.*`：语义层（`semantic_scene_json`），使场景可查询/可理解。
 
-在代码层面，可以使用 `src/world_model/scene_state.py` 中的：
+在代码层面，可以使用 `src/world_model/` 中的：
 
-- `SceneState`：轻量级的场景状态数据结构；
-- `load_scene_state(...)` / `save_scene_state(...)`：读写 JSON；
-- `example_playroom_state(...)`：基于当前仓库路径构造 `playroom` 场景的示例状态。
+- `scene_state`：`SceneState`、`load_scene_state` / `save_scene_state`、`example_playroom_state`；
+- `semantics`：`SemanticScene`、`load_semantic_scene` / `save_semantic_scene`，以及按类别/区域/点的查询 API（`query_by_class`、`query_region`、`get_semantic_at_point`）。
 
-这样，你可以把 **COLMAP poses → Nerfstudio / NeRF → 3DGS** 这一条链路的所有中间结果，都纳入到一个统一的“世界记忆单元”中，后续无论做渲染、编辑还是语义实验，都只需先加载 `SceneState`。
+运行 `scripts/run_semantic_labeling.py` 可为场景生成 2D 语义与可选 3D 点语义，详见 `docs/COLMAP_与_Nerfstudio_教程.md` 第九节。
+
+这样，你可以把 **COLMAP poses → Nerfstudio / NeRF → 3DGS → 语义层** 的所有中间结果，都纳入到一个统一的“世界记忆单元”中，后续无论做渲染、编辑还是语义查询，都只需先加载 `SceneState`。
 
 ---
 

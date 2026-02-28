@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
+from .semantics import SemanticScene, load_semantic_scene
 
 PathLike = Union[str, Path]
 
@@ -51,6 +52,24 @@ class SceneState:
             "representations": _convert(self.representations),
             "meta": _convert(self.meta),
         }
+
+    def get_semantic_path(self) -> Optional[Path]:
+        """返回语义层 JSON 的绝对路径（若已配置）。"""
+        sem = self.representations.get("semantics") or {}
+        rel = sem.get("semantic_scene_json")
+        if not rel:
+            return None
+        return self.resolve(rel)
+
+    def load_semantic_scene(self) -> Optional[SemanticScene]:
+        """若场景已配置语义层，则加载并返回 SemanticScene，否则返回 None。"""
+        path = self.get_semantic_path()
+        if path is None or not path.exists():
+            return None
+        scene = load_semantic_scene(path)
+        if not scene.semantic_root:
+            scene.semantic_root = path.parent
+        return scene
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SceneState":
@@ -120,6 +139,10 @@ def example_playroom_state(repo_root: PathLike) -> SceneState:
                     )
                 }
             },
+        },
+        "semantics": {
+            # 运行 scripts/run_semantic_labeling.py 后生成（路径相对于场景根）
+            "semantic_scene_json": "semantic/semantic_scene.json",
         },
         "gaussians": {
             # splatfacto（Nerfstudio 内置 3DGS 实现）

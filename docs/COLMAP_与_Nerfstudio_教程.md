@@ -112,6 +112,17 @@ COLMAP 的稀疏重建（Structure-from-Motion）主要包括：
 - 每张图的相机位姿（R, t）和内参（f, cx, cy 等）；
 - 一个稀疏的 3D 点云，每个点由多个观测支持。
 
+#### 3.1.1 SfM 关键技术原理（数学简述）
+
+- **特征提取（以 SIFT 为例）**：在尺度空间上检测极值点，得到位置 \((x,y)\)、尺度 \(\sigma\)、主方向 \(\theta\)；在邻域内统计梯度直方图得到 128 维描述子，具有尺度与旋转不变性。
+- **对极几何**：两视图下，对应点 \(\mathbf{p}_1 \leftrightarrow \mathbf{p}_2\)（齐次像素坐标）满足 \(\mathbf{p}_2^\top \mathbf{F} \mathbf{p}_1 = 0\)，其中基础矩阵 \(\mathbf{F} = \mathbf{K}_2^{-\top} \mathbf{E} \mathbf{K}_1^{-1}\)，本质矩阵 \(\mathbf{E} = [\mathbf{t}]_\times \mathbf{R}\) 编码相对位姿 \((\mathbf{R}, \mathbf{t})\)。通过八点法或 RANSAC 估计 \(\mathbf{F}/\mathbf{E}\)，再分解得到 \(\mathbf{R},\mathbf{t}\)（含尺度歧义，由三角化后的 3D 点尺度固定）。
+- **三角化**：已知两相机投影矩阵 \(\mathbf{P}_1, \mathbf{P}_2\) 与匹配点 \(\mathbf{p}_1, \mathbf{p}_2\)，求 3D 点 \(\mathbf{X}\) 使 \(\mathbf{p}_i \propto \mathbf{P}_i \mathbf{X}\)。常用 DLT（线性 SVD）或中点法（在两射线间取最近点）。
+- **捆绑调整（Bundle Adjustment）**：优化所有相机参数与 3D 点，最小化重投影误差：
+  \[
+  \min_{\{\mathbf{R}_i,\mathbf{t}_i\},\{\mathbf{X}_j\}} \sum_{i,j} \rho \bigl( \| \pi(\mathbf{R}_i \mathbf{X}_j + \mathbf{t}_i) - \mathbf{p}_{ij} \|^2 \bigr),
+  \]
+  其中 \(\pi\) 为相机投影（含内参），\(\rho\) 为鲁棒核（如 Huber）。增量式 SfM 每加入一张新图后做局部或全局 BA。
+
 ### 3.2 稠密重建（MVS）的核心步骤
 
 在已有相机位姿的前提下，COLMAP 使用多视图立体（MVS）生成稠密深度：
@@ -121,6 +132,12 @@ COLMAP 的稀疏重建（Structure-from-Motion）主要包括：
 3. 融合多视角深度图得到稠密点云（`stereo_fusion`）。
 
 对于 NeRF / Nerfstudio 使用场景，**稀疏层的相机位姿就已经足够**，稠密层可选。
+
+#### 3.2.1 MVS 关键技术原理（数学简述）
+
+- **针孔模型与去畸变**：成像关系 \(\mathbf{p} \propto \mathbf{K} (\mathbf{R}\mathbf{X}+\mathbf{t})\)，\(\mathbf{K}\) 为内参（焦距 \(f_x,f_y\)、主点 \(c_x,c_y\) 及径向/切向畸变）。去畸变将观测统一到理想针孔，便于多视图几何一致计算。
+- **PatchMatch Stereo**：对参考图每个像素估计一个**局部平面**（深度 \(d\) 与法向 \(\mathbf{n}\)）。通过随机初始化 + 迭代**传播**（邻域复制）与**随机扰动**，在光度一致性（如 NCC、绝对差）下优化 \(d,\mathbf{n}\)，得到每像素视差/深度图。
+- **多视图融合**：对各视角的深度图进行**一致性检验**（同一 3D 点在不同视图的深度一致），通过加权平均或投票得到稠密 3D 点云，并写入 PLY 等格式。
 
 ---
 
@@ -238,6 +255,16 @@ Nerfstudio 是一个围绕 NeRF 及其变体的训练/可视化框架，它的�
 - 调用 COLMAP（或读取其输出）估计相机位姿；
 - 将结果转换为 `transforms.json` 等；
 - 在此基础上进行 NeRF 训练。
+
+#### 5.1 NeRF 与体渲染的关键技术原理（数学简述）
+
+- **辐射场表示**：场景由连续场函数 \(f(\mathbf{x}, \mathbf{d})\) 描述，输入为 3D 点 \(\mathbf{x}\) 与视线方向 \(\mathbf{d}\)，输出为颜色 \(\mathbf{c}\) 与体密度 \(\sigma\)（通常用 MLP 拟合）。
+- **体渲染**：沿射线 \(\mathbf{r}(t) = \mathbf{o} + t \mathbf{d}\) 积分颜色。离散化后，像素颜色为
+  \[
+  \hat{C}(\mathbf{r}) = \sum_i T_i (1 - \exp(-\sigma_i \delta_i)) \mathbf{c}_i,\quad T_i = \exp\biggl(-\sum_{j<i} \sigma_j \delta_j\biggr),
+  \]
+  其中 \(\delta_i\) 为采样段长，\(T_i\) 为透射率。可微，便于对 \(\mathbf{c},\sigma\) 反向传播。
+- **训练目标**：对每条射线计算 \(\hat{C}(\mathbf{r})\)，与真实像素颜色做 MSE（或其它损失），优化 MLP 参数；常用 positional encoding 对 \(\mathbf{x},\mathbf{d}\) 编码以提升高频细节。Nerfacto 等变体在 MLP 结构、采样策略与外观编码上有所改进。
 
 ---
 
@@ -404,6 +431,12 @@ ns-render dataset \
 
 > 提示：可以根据显存情况选择 `splatfacto` 或 `splatfacto-big`，也可以通过命令行参数调节质量与速度。
 
+#### 8.1.1 3D 高斯与 Splatting 的关键技术原理（数学简述）
+
+- **高斯表示**：每个 3D 高斯由中心 \(\boldsymbol{\mu}\)、协方差 \(\boldsymbol{\Sigma}\)（正定，对应椭球形状与朝向）、不透明度 \(\alpha\) 与球谐系数（或 RGB）表示颜色。为保持正定，常用尺度 \(\mathbf{s}\) 与旋转 \(\mathbf{R}\) 参数化：\(\boldsymbol{\Sigma} = \mathbf{R} \mathbf{S} \mathbf{S}^\top \mathbf{R}^\top\)，\(\mathbf{S} = \operatorname{diag}(\mathbf{s})\)。
+- **投影与 Splatting**：将 3D 高斯按相机投影到 2D，得到 2D 协方差与中心；在像平面上按高斯权重做 **alpha blending**（按深度排序），得到像素颜色。整个过程可微，便于梯度反传。
+- **优化**：初始高斯常由 SfM 稀疏点或 NeRF 密度场得到；通过渲染损失（与输入图像 MSE）优化高斯参数（位置、尺度、旋转、颜色、不透明度），并可配合致密化/剪枝（增加高误差处高斯、移除低贡献高斯）提升质量与效率。
+
 ### 8.2 将多种表示统一到静态 Scene State
 
 为了在“世界模型”的视角下复用同一场景，本仓库推荐为每个场景维护一个 **world state JSON**，例如：
@@ -424,4 +457,103 @@ ns-render dataset \
 - 以及 `example_playroom_state(repo_root)`（用于生成或参考 `playroom` 场景的 world state）。
 
 这样，**COLMAP poses → Nerfstudio / NeRF → 3DGS** 这条链路上的所有中间表示，都可以在一个统一的“静态场景状态”对象中被索引和复用，为后续世界模型实验打下基础。
+
+---
+
+## 九、语义层：使场景可查询/可理解
+
+在几何层与辐射场/3DGS 之上，增加**语义层**是“世界模型”中 ROI 很高的增量：让场景支持**按类别、按区域、按点**的查询，从而“可理解”。
+
+### 9.1 语义层在整体架构中的位置
+
+```text
+多视角图像
+  → COLMAP（几何层）
+  → Nerfstudio / 3DGS（辐射场/显式表示）
+  → 语义标注（2D 分割 + 可选 3D 点融合）→ 可查询接口
+```
+
+- **2D 语义**：对每张场景图像做语义分割（如 SegFormer + ADE20K 类别），得到每像素类别与每图类别统计。
+- **3D 语义**（可选）：利用 COLMAP 稀疏点及其在多视图中的观测，将 2D 标签投票到 3D 点，得到“带语义的稀疏点云”，支持 3D 空间查询。
+
+#### 9.1.1 语义层关键技术原理（数学简述）
+
+- **2D 语义分割**：模型将图像映射到每像素类别 \(y_{uv} \in \{1,\ldots,K\}\)（如 ADE20K 的 \(K=150\)）。典型流程：编码器-解码器（如 SegFormer）输出 \(H\times W\times K\) 的 logits，逐像素 argmax 得到标签；训练时用交叉熵等损失监督。本仓库对每张图保存 label map 与每类像素数（class_counts），便于“该图包含哪些类”的快速查询。
+- **3D 语义融合**：对 COLMAP 中每个 3D 点 \(\mathbf{X}\)，已知其在若干图像中的观测（\(\mathbf{p}_{ij}\) 与相机 \(\mathbf{P}_i\)）。将 \(\mathbf{X}\) 反投影到各视图得到像素 \((u,v)\)，在对应 2D label map 上读取 \(y_{uv}\)；对多视图的 \(y\) 做**多数投票**（或加权）得到该点的语义标签与置信度，从而得到“带语义的稀疏点云”。查询时可用 3D 包围盒过滤或最近邻检索（如 `get_semantic_at_point`）。
+
+### 9.2 运行语义标注
+
+在 `worldrecon` 环境中，使用仓库内脚本对已具备 `ns_processed` 的场景做 2D 语义分割，并可选用 COLMAP sparse 做 3D 融合：
+
+```bash
+conda activate worldrecon
+REPO_ROOT=/home/wenhanxiao/code/3D_Reconstruction_ing
+cd $REPO_ROOT
+
+# 仅 2D 语义（只需 ns_processed）
+python scripts/run_semantic_labeling.py \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --output-dir mipnerf360/db/playroom/semantic \
+  --scene-id mipnerf360/db/playroom
+
+# 2D + 3D 融合（需 COLMAP sparse 目录）
+python scripts/run_semantic_labeling.py \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --sparse-dir mipnerf360/db/playroom/sparse/0 \
+  --output-dir mipnerf360/db/playroom/semantic \
+  --scene-id mipnerf360/db/playroom
+```
+
+输出目录（如 `mipnerf360/db/playroom/semantic/`）中将包含：
+
+- `semantic_scene.json`：类别表、每张图的语义元数据、以及（若做 3D 融合）每个稀疏点的语义；
+- `label_maps/*.npy`：每张图对应的像素级类别 id 图（可选用于可视化或后续分析）。
+
+### 9.3 在 World State 中挂接语义层
+
+在场景的 `world_state.*.json` 中增加 `representations.semantics`，指向上述语义结果：
+
+```json
+"semantics": {
+  "semantic_scene_json": "semantic/semantic_scene.json"
+}
+```
+（路径相对于场景根目录。）
+
+这样，通过 `SceneState.load_semantic_scene()` 即可在同一场景状态中加载语义，并与几何/NeRF/3DGS 一起使用。
+
+### 9.4 查询 API 使用示例
+
+加载场景状态与语义后，可进行“按类别”“按 3D 区域”“按点”的查询，使场景可理解、可查询：
+
+```python
+from pathlib import Path
+from src.world_model import load_scene_state
+from src.world_model.semantics import load_semantic_scene
+
+REPO_ROOT = Path("/home/wenhanxiao/code/3D_Reconstruction_ing")
+state = load_scene_state(REPO_ROOT / "mipnerf360/db/playroom/world_state.playroom.json")
+sem = state.load_semantic_scene()
+if sem is None:
+    sem = load_semantic_scene(REPO_ROOT / "mipnerf360/db/playroom/semantic/semantic_scene.json")
+
+# 按类别查询：哪些图像/点包含“椅子”
+result = sem.query_by_class("chair", include_2d=True, include_3d=True)
+print("包含 chair 的图像数:", len(result["images"]))
+print("包含 chair 的 3D 点数:", len(result["points"]))
+
+# 列出场景中出现的所有类别
+for cid, cname in sem.list_classes():
+    print(cid, cname)
+
+# 按 3D 包围盒查询
+points_in_region = sem.query_region(bbox_min=(0, 0, 0), bbox_max=(2, 2, 2), class_filter="table")
+
+# 查询某空间点的语义（最近邻带语义 3D 点）
+ps = sem.get_semantic_at_point(0.5, 0.0, -1.0)
+if ps:
+    print("该点语义:", ps.class_name, ps.confidence)
+```
+
+以上能力共同构成“可查询/可理解”的语义层，与现有几何层、辐射场层一起，形成更完整的世界模型静态场景状态。
 
