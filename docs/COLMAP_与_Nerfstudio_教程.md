@@ -555,5 +555,101 @@ if ps:
     print("该点语义:", ps.class_name, ps.confidence)
 ```
 
+### 9.5 在 Viewer 中按类别上色（3D 语义查看器）
+
+完成 3D 语义融合后，可使用本仓库提供的 **3D 语义查看器** 在独立窗口中按类别着色查看点云（基于 Open3D）：
+
+```bash
+conda activate worldrecon
+cd $REPO_ROOT
+
+# 方式一：直接指定 semantic_scene.json
+python scripts/view_semantic_3d.py --semantic-json mipnerf360/db/playroom/semantic/semantic_scene.json
+
+# 方式二：通过 world_state 自动定位语义文件
+python scripts/view_semantic_3d.py --world-state mipnerf360/db/playroom/world_state.playroom.json
+```
+
+要求：`semantic_scene.json` 中需包含 3D 点（即曾用 `run_semantic_labeling.py` 并传入 `--sparse-dir` 做过 3D 融合）。打开后每个语义类别一种颜色，图例在终端打印。
+
+**无显示器（SSH/服务器）时**：无法弹窗，可先导出彩色 PLY 再在本地查看：
+
+```bash
+python scripts/view_semantic_3d.py --semantic-json mipnerf360/db/playroom/semantic/semantic_scene.json --export-ply semantic_colored.ply
+```
+
+将生成的 `semantic_colored.ply` 下载到本机，用 MeshLab、CloudCompare 或本地 Open3D 打开即可按类别颜色查看。
+
+### 9.6 训练时语义 NeRF 与 3DGS
+
+在已有 2D 语义标签（`run_semantic_labeling.py` 生成的 `label_maps/`）的基础上，本仓库支持**训练时**将语义纳入 NeRF 与 3DGS，使渲染结果可直接输出按类别着色的语义图。
+
+**语义 NeRF（训练时监督）**
+
+- 使用轻量体渲染 + 语义头（`src/semantic_nerf`），对每条射线同时渲染 RGB 与语义 logits，用 2D 标签做交叉熵监督。
+- 运行前需已具备 `ns_processed` 与 `semantic/label_maps/*.npy`。
+
+```bash
+conda activate worldrecon
+cd $REPO_ROOT
+
+python scripts/train_semantic_nerf.py \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --semantic-dir mipnerf360/db/playroom/semantic \
+  --output-dir mipnerf360/db/playroom/semantic_nerf_runs \
+  --num-classes 150 \
+  --steps 10000
+```
+
+- 输出：`semantic_nerf_runs/semantic_nerf.pt`（含 MLP 权重），可用于后续渲染 RGB 与语义图。
+
+**语义 3DGS（在 splatfacto 稠密高斯上挂语义）**
+
+- 先用 **splatfacto** 训好稠密 3DGS（`ns-train splatfacto`），再在其高斯上挂语义 logits，仅训语义头，用 2D 标签监督；几何与 RGB 冻结。
+- 运行前需：已存在 splatfacto 的 config.yml（含 checkpoint 的 run 目录）、`ns_processed`、以及 `semantic/label_maps/*.npy`（`run_semantic_labeling.py` 产出）；环境需 `gsplat` 与 `nerfstudio`（worldrecon 已包含）。
+
+```bash
+conda activate worldrecon
+cd $REPO_ROOT
+
+# 1）先训 splatfacto（若尚未训练）
+ns-train splatfacto --data mipnerf360/db/playroom/ns_processed \
+  --output-dir mipnerf360/db/playroom/ns_runs/playroom_splatfacto \
+  --max-num-iterations 30000
+
+# 2）在 splatfacto 输出目录下找到 config.yml（通常在 ns_processed/splatfacto/<时间戳>/ 下），再训语义头
+python scripts/train_semantic_3dgs.py \
+  --splatfacto-config mipnerf360/db/playroom/ns_runs/playroom_splatfacto/ns_processed/splatfacto/YYYY-MM-DD_HHMMSS/config.yml \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --semantic-dir mipnerf360/db/playroom/semantic \
+  --output-dir mipnerf360/db/playroom/semantic_3dgs_runs \
+  --steps 3000
+```
+
+- 输出：`semantic_3dgs_runs/semantic_3dgs.pt`（稠密高斯参数 + 语义 logits），可用于按视角渲染 RGB 与按类别着色的语义图。  
+- 说明：`--splatfacto-config` 中的 `YYYY-MM-DD_HHMMSS` 需替换为 `ns-train splatfacto` 实际生成的时间戳目录名（在 `ns_runs/playroom_splatfacto/ns_processed/splatfacto/` 下查看）。
+
+**在 Viewer 里查看 NeRF/3DGS 语义上色**
+
+训练完成后，用渲染脚本生成 RGB 与按类别着色的语义图，保存为图片后即可用任意图片查看器或浏览器查看上色效果：
+
+```bash
+# 语义 NeRF：渲染第一帧视角
+python scripts/render_semantic_nerf.py \
+  --checkpoint mipnerf360/db/playroom/semantic_nerf_runs/semantic_nerf.pt \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --output-dir mipnerf360/db/playroom/semantic_nerf_runs/renders \
+  --frame-idx 0
+
+# 语义 3DGS：渲染第一帧视角
+python scripts/render_semantic_3dgs.py \
+  --checkpoint mipnerf360/db/playroom/semantic_3dgs_runs/semantic_3dgs.pt \
+  --processed-dir mipnerf360/db/playroom/ns_processed \
+  --output-dir mipnerf360/db/playroom/semantic_3dgs_runs/renders \
+  --frame-idx 0
+```
+
+输出目录中会生成 `rgb.png`、`semantic_colormap.png`（按类别着色）和 `rgb_semantic_sidebyside.png`（左右对比），用系统图片查看器或浏览器打开即可在 Viewer 中查看上色效果。更换 `--frame-idx` 可渲染不同视角。
+
 以上能力共同构成“可查询/可理解”的语义层，与现有几何层、辐射场层一起，形成更完整的世界模型静态场景状态。
 

@@ -144,6 +144,16 @@ def example_playroom_state(repo_root: PathLike) -> SceneState:
             # 运行 scripts/run_semantic_labeling.py 后生成（路径相对于场景根）
             "semantic_scene_json": "semantic/semantic_scene.json",
         },
+        "semantic_nerf": {
+            # 运行 scripts/train_semantic_nerf.py 后的输出目录（可选）
+            "run_dir": None,
+            "checkpoint": "semantic_nerf_runs/semantic_nerf.pt",
+        },
+        "semantic_3dgs": {
+            # 运行 scripts/train_semantic_3dgs.py 后的输出目录（可选）
+            "run_dir": None,
+            "checkpoint": "semantic_3dgs_runs/semantic_3dgs.pt",
+        },
         "gaussians": {
             # splatfacto（Nerfstudio 内置 3DGS 实现）
             "splatfacto": {

@@ -15,3 +15,6 @@ ns_runs/
 **/0_undistort/
 *.ply
 mipnerf360/**/my_practice_output/
+# 语义 3DGS / NeRF 训练输出（体积较大，按需保留本地）
+semantic_3dgs_runs/
+semantic_nerf_runs/
