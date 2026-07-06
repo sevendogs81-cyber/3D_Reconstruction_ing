@@ -1,0 +1,326 @@
+# 从三维重建到世界模型的技术路径综述
+
+## 几何、辐射场与显式表示
+
+> 3D_Reconstruction_ing 项目笔记
+
+**摘要：** 本综述基于 `3D_Reconstruction_ing` 仓库中的文档与代码，系统梳理从传统三维重建到面向世界模型（World Model）的 3D/360 表示技术路径。文章从几何层、辐射场层、显式高效表示层，以及语义与世界记忆接口四个层面展开，给出关键数学公式与算法要点，为后续工程实践文档与实验提供理论背景。
+
+---
+
+# 引言：三维重建与世界模型
+
+三维与全景重建（3D / 360 Reconstruction）关注从多视角图像或视频中恢复世界的几何结构与全景语义。 在世界模型视角下，我们期望的不只是离线重建一个静态场景，而是构建一个 *可查询、可渲染、可推理* 的空间表示，用于支撑导航、编辑、理解与生成等多种下游任务。
+
+本仓库的总体目标可以概括为：
+
+> 围绕 Mip-NeRF 360 等真实世界数据，搭建从 COLMAP $`\to`$ Nerfstudio $`\to`$ 3DGS / 4DGS 的动手实践与技术验证管线，为“世界模型”的 3D / 360 表示打基础。
+
+从技术栈角度，核心可拆解为三层：
+
+1.  **几何层（Geometry / SfM / MVS）：**\
+    估计相机位姿与稀疏/稠密点云，保证几何与物理一致性。
+
+2.  **辐射场层（Radiance Field / NeRF）：**\
+    学习连续体积场函数 $`f(\bm{x},\bm{d})`$，从任意视角渲染高质量图像。
+
+3.  **显式高效表示层（3DGS / 4DGS 等）：**\
+    用高斯云等显式结构替代纯 MLP 体渲染，在保证质量的前提下提升渲染效率与可编辑性。
+
+在此之上，再叠加语义层与统一的场景状态（Scene State），构成可查询、可组合的世界记忆。
+
+# 几何层：多视图几何与 COLMAP
+
+## 针孔相机模型与坐标变换
+
+在经典多视图几何中，针孔相机模型将 3D 点 $`\bm{X} = (X,Y,Z)^\top`$ 映射到图像平面像素 $`\bm{p} = (u,v)^\top`$：
+```math
+\begin{equation}
+  \lambda
+  \begin{bmatrix}
+    u \\ v \\ 1
+  \end{bmatrix}
+  =
+  \bm{K}
+  \begin{bmatrix}
+    \bm{R} & \bm{t} \\
+    \bm{0}^\top & 1
+  \end{bmatrix}
+  \begin{bmatrix}
+    X \\ Y \\ Z \\ 1
+  \end{bmatrix},
+  \quad
+  \bm{K} =
+  \begin{bmatrix}
+    f_x & 0   & c_x \\
+    0   & f_y & c_y \\
+    0   & 0   & 1
+  \end{bmatrix},
+\end{equation}
+```
+其中 $`\bm{R}\in SO(3)`$、$`\bm{t}\in\mathbb{R}^3`$ 为相机外参，$`\bm{K}`$ 为内参，$`\lambda`$ 为尺度因子。 当考虑径向/切向畸变时，通常在像平面上先对归一化坐标做畸变矫正，再乘以内参。
+
+## 对极几何与本质矩阵
+
+在两视图情形下，空间点 $`\bm{X}`$ 在两个相机中的像素分别为 $`\bm{p}_1,\bm{p}_2`$（齐次坐标）， 则存在本质矩阵 $`\bm{E}`$ 与基础矩阵 $`\bm{F}`$ 使得：
+```math
+\begin{equation}
+  \bm{p}_2^\top \bm{F} \bm{p}_1 = 0,\qquad
+  \bm{F} = \bm{K}_2^{-\top} \bm{E} \bm{K}_1^{-1},\qquad
+  \bm{E} = [\bm{t}]_\times \bm{R},
+\end{equation}
+```
+其中 $`[\bm{t}]_\times`$ 为由平移向量 $`\bm{t}`$ 构造的反对称矩阵。 在 COLMAP 等 SfM 系统中，通常使用带 RANSAC 的 8 点或 5 点算法从匹配点对中估计 $`\bm{F}/\bm{E}`$， 再分解得到相对位姿 $`(\bm{R},\bm{t})`$（含尺度歧义）。
+
+## 三角化与 Bundle Adjustment
+
+已知相机投影矩阵 $`\bm{P}_1,\bm{P}_2`$ 与匹配像素 $`\bm{p}_1,\bm{p}_2`$，可通过线性 DLT 或中点法计算 3D 点 $`\bm{X}`$，这一过程称为三角化：
+```math
+\begin{equation}
+  \bm{p}_i \propto \bm{P}_i \bm{X}, \quad i=1,2.
+\end{equation}
+```
+对整个场景而言，带噪声的观测会导致误差累积，需要通过捆绑调整（Bundle Adjustment, BA）进行全局非线性优化。 设 $`\pi(\cdot)`$ 为投影函数（含内参和畸变），$`\bm{p}_{ij}`$ 为第 $`i`$ 台相机观测到的第 $`j`$ 个点的像素位置，则 BA 的典型目标函数为：
+```math
+\begin{equation}
+  \min_{\{\bm{R}_i,\bm{t}_i\},\{\bm{X}_j\}}
+  \sum_{i,j} \rho\Bigl(
+    \bigl\|
+      \pi(\bm{R}_i \bm{X}_j + \bm{t}_i) - \bm{p}_{ij}
+    \bigr\|^2
+  \Bigr),
+\end{equation}
+```
+其中 $`\rho(\cdot)`$ 为鲁棒核函数（如 Huber），以降低误匹配对优化的影响。 COLMAP 采用增量式 SfM：从少量视图初始化，逐步加入新视图并在每一步执行局部或全局 BA。
+
+## 多视图立体（MVS）与稠密重建
+
+在 SfM 获得准确相机位姿后，多视图立体（MVS）进一步估计每个像素的深度，从而形成稠密点云。 COLMAP 中典型流程为：
+
+1.  去畸变与统一成像模型：将图像统一到理想针孔模型，方便后续几何推理；
+
+2.  PatchMatch Stereo：为每个像素估计局部平面（由深度 $`d`$ 与法向 $`\bm{n}`$ 描述）， 通过随机初始化、邻域传播与随机扰动迭代优化， 在光度一致性损失（如 NCC 或绝对差）下收敛；
+
+3.  多视图深度融合：对各图像的深度图进行几何一致性检测， 将多视图一致的像素融合为 3D 点，得到稠密点云。
+
+在本仓库面向 NeRF / Nerfstudio 的实践中，*稀疏层的相机位姿已经足够驱动后续辐射场训练*， 稠密 MVS 是可选的增强步骤。
+
+# 辐射场层：NeRF 与体渲染
+
+## 连续辐射场表示
+
+NeRF 将场景表示为一个连续的辐射场函数
+```math
+\begin{equation}
+  f : (\bm{x}, \bm{d}) \mapsto (\bm{c}, \sigma),
+\end{equation}
+```
+其中 $`\bm{x}\in\mathbb{R}^3`$ 为 3D 空间点，$`\bm{d}\in\mathbb{S}^2`$ 为视线方向， $`\bm{c}\in\mathbb{R}^3`$ 为 RGB 颜色，$`\sigma\in\mathbb{R}_{\ge 0}`$ 为体密度。 在原始 NeRF 中，$`f`$ 由一个多层感知机（MLP）拟合，输入为对 $`\bm{x},\bm{d}`$ 做位置编码（positional encoding）后的高维特征：
+```math
+\begin{equation}
+  \gamma_L(x) = \Bigl(
+    \sin(2^0\pi x), \cos(2^0\pi x),\dots,
+    \sin(2^{L-1}\pi x), \cos(2^{L-1}\pi x)
+  \Bigr),
+\end{equation}
+```
+对每个坐标维度独立编码后再拼接。 本仓库的语义 NeRF 模型也采用了类似的正余弦位置编码结构。
+
+## 体渲染积分与离散近似
+
+给定一条射线
+```math
+\begin{equation}
+  \bm{r}(t) = \bm{o} + t \bm{d}, \quad t \in [t_n, t_f],
+\end{equation}
+```
+其中 $`\bm{o}`$ 为相机中心，$`\bm{d}`$ 为单位方向向量， NeRF 定义该射线对应像素颜色的体渲染积分为：
+```math
+\begin{equation}
+  C(\bm{r}) = \int_{t_n}^{t_f}
+    T(t)\,\sigma\bigl(\bm{r}(t)\bigr)\,
+    \bm{c}\bigl(\bm{r}(t),\bm{d}\bigr)\,\mathrm{d}t,
+  \quad
+  T(t) = \exp\left(
+    -\int_{t_n}^{t} \sigma(\bm{r}(s))\,\mathrm{d}s
+  \right).
+\end{equation}
+```
+
+实际实现中，将积分离散化为若干采样点 $`\{t_i\}`$，得到近似：
+```math
+\begin{equation}
+  \hat{C}(\bm{r}) =
+  \sum_i T_i \bigl(1 - \exp(-\sigma_i \delta_i)\bigr)\bm{c}_i,\quad
+  T_i = \exp\Bigl(-\sum_{j<i} \sigma_j \delta_j\Bigr),
+\end{equation}
+```
+其中 $`\delta_i = t_{i+1}-t_i`$ 为相邻采样点间距。 这一形式既保持了可微性，也较好逼近了体积渲染物理过程。
+
+## 训练目标与变体
+
+在监督训练设置下，给定一组多视角图像与相机位姿， 对每条射线 $`\bm{r}`$，计算预测颜色 $`\hat{C}(\bm{r})`$，与真实像素颜色 $`\bm{C}^\ast(\bm{r})`$ 做损失：
+```math
+\begin{equation}
+  \mathcal{L}_\text{RGB}
+  =
+  \frac{1}{N}\sum_{\bm{r}}
+    \bigl\| \hat{C}(\bm{r}) - \bm{C}^\ast(\bm{r}) \bigr\|_2^2
+  \quad \text{或更一般的感知损失}.
+\end{equation}
+```
+
+Nerfstudio 中的 `nerfacto` 等变体在以下方面做了大量工程优化：
+
+- 使用多分辨率哈希网格等高效编码替代纯 MLP；
+
+- 采用分层/重要性采样，提高采样点利用率；
+
+- 加入外观编码、曝光校正等，以增强真实感与泛化能力。
+
+尽管具体结构各异，它们在数学上仍服从 “连续场 + 体渲染 + 可微优化” 这一统一范式。
+
+# 显式高效表示：3D Gaussian Splatting 与 4D 扩展
+
+## 3D 高斯表示与参数化
+
+3D Gaussian Splatting（3DGS）使用一组带属性的三维高斯来显式表示场景。 对单个高斯，可写为
+```math
+\begin{equation}
+  \mathcal{G}(\bm{x})
+  = \alpha \cdot \exp\!\Bigl(
+      -\tfrac{1}{2}
+      (\bm{x}-\bm{\mu})^\top
+      \bm{\Sigma}^{-1}
+      (\bm{x}-\bm{\mu})
+    \Bigr),
+\end{equation}
+```
+其中 $`\bm{\mu}\in\mathbb{R}^3`$ 为中心，$`\bm{\Sigma}\in\mathbb{R}^{3\times 3}`$ 为正定协方差矩阵， $`\alpha`$ 为不透明度或密度相关系数，颜色可由 RGB 或球谐系数参数化。
+
+为了保证 $`\bm{\Sigma}`$ 正定，实践中常采用
+```math
+\begin{equation}
+  \bm{\Sigma} = \bm{R}\bm{S}\bm{S}^\top \bm{R}^\top,
+\end{equation}
+```
+其中 $`\bm{R}\in SO(3)`$ 为旋转矩阵，$`\bm{S}=\mathrm{diag}(s_x,s_y,s_z)`$ 为尺度矩阵。 3DGS 的优化过程即是在多视角图像监督下对 $`(\bm{\mu},\bm{R},\bm{S},\alpha,\text{color})`$ 等参数做梯度更新。
+
+## Splatting 与可微渲染
+
+在渲染时，首先将三维高斯按当前相机位姿投影到二维像素平面， 得到 2D 高斯（中心与协方差经过线性变换），再按照深度从远至近排序， 对每个像素做 alpha blending：
+```math
+\begin{equation}
+  \bm{C}_\text{out} =
+  \sum_{k}
+    \tilde{\alpha}_k
+    \Bigl(
+      \prod_{j<k} (1-\tilde{\alpha}_j)
+    \Bigr)
+    \bm{c}_k,
+\end{equation}
+```
+其中 $`\tilde{\alpha}_k`$ 为第 $`k`$ 个高斯在该像素处的透明度权重， $`\bm{c}_k`$ 为其颜色。 这一过程是可微的，可直接用反向传播优化高斯参数。
+
+与 NeRF 相比，3DGS 在保持较高重建质量的同时， 大幅提高了渲染速度与交互效率，更适合实时查看、编辑与下游任务。
+
+## 4DGS 与动态场景
+
+4D Gaussian Splatting（4DGS）在 3DGS 的基础上将时间或隐空间纳入参数， 例如令高斯中心或颜色为时间的函数：
+```math
+\begin{equation}
+  \bm{\mu}(t),\quad
+  \bm{\Sigma}(t),\quad
+  \bm{c}(t),
+\end{equation}
+```
+从而表示动态场景或动作序列。 在世界模型语境下，4DGS 扮演了 “状态随时间演化” 的显式表征角色， 有利于对时空一致性的建模与推理。
+
+# 语义层与世界记忆接口
+
+## 2D 语义分割与像素级监督
+
+语义层的第一步通常是对每张输入图像做 2D 语义分割。 设某张图像尺寸为 $`H\times W`$，类别数为 $`K`$， 语义分割网络输出每个像素的 logits：
+```math
+\begin{equation}
+  \bm{z}_{uv} \in \mathbb{R}^K,\quad (u,v)\in\{1,\dots,W\}\times\{1,\dots,H\}.
+\end{equation}
+```
+经过 softmax 得到类别概率
+```math
+\begin{equation}
+  p(y_{uv}=k) = \frac{\exp(z_{uv}^{(k)})}{\sum_{k'} \exp(z_{uv}^{(k')})},
+\end{equation}
+```
+训练时使用交叉熵损失：
+```math
+\begin{equation}
+  \mathcal{L}_\text{seg}
+  = - \frac{1}{HW}
+    \sum_{u,v} \log p\bigl(y_{uv}^\ast\bigr),
+\end{equation}
+```
+其中 $`y_{uv}^\ast`$ 为标注的真值类别。
+
+本仓库的 `scripts/run_semantic_labeling.py` 负责对 Nerfstudio 预处理后的图像 生成像素级 label map，并可选汇总为每张图的类别统计等元数据。
+
+## 3D 语义融合：从图像到点云
+
+在已知 COLMAP 稀疏点云与其多视图观测的前提下， 可将 2D 语义标签投票到 3D 点上，得到 “带语义的点云”。 设某个 3D 点 $`\bm{X}`$ 在若干图像中的投影像素为 $`\{(u_i,v_i)\}`$， 对应的 2D 语义标签为 $`\{y_i\}`$，则可定义该点的 3D 语义标签为
+```math
+\begin{equation}
+  \hat{y}(\bm{X})
+  = \arg\max_{k}
+    \sum_{i} w_i \,\mathbf{1}[y_i = k],
+\end{equation}
+```
+其中 $`\{w_i\}`$ 为基于视角、深度或置信度的权重。
+
+在本仓库中，`semantic_scene.json` 记录了这样的 3D 语义点信息， 并提供了按类别、按 3D 区域、按查询点检索的接口。
+
+## 语义 NeRF 与语义 3DGS
+
+在此基础上，可以在辐射场与 3DGS 层面进一步引入语义监督。
+
+#### 语义 NeRF：
+
+对每个采样点，NeRF 模型除了输出 $`(\bm{c},\sigma)`$ 外，还预测语义 logits $`\bm{s}\in\mathbb{R}^K`$。 在体渲染过程中，同时对 RGB 与语义进行加权积分：
+```math
+\begin{align}
+  \hat{\bm{C}}(\bm{r}) &= \sum_i w_i \bm{c}_i, \\
+  \hat{\bm{s}}(\bm{r}) &= \sum_i w_i \bm{s}_i,
+\end{align}
+```
+其中 $`w_i`$ 为与密度相关的体渲染权重。 对每条射线的语义标签 $`y^\ast`$ 使用交叉熵损失：
+```math
+\begin{equation}
+  \mathcal{L}_\text{sem-NeRF}
+  =
+  - \frac{1}{N}
+    \sum_{\bm{r}}
+    \log
+    \frac{\exp\bigl(\hat{s}_{y^\ast}(\bm{r})\bigr)}
+         {\sum_k \exp\bigl(\hat{s}_k(\bm{r})\bigr)}.
+\end{equation}
+```
+总损失为 RGB 与语义损失的加权和。 本仓库的 `src/semantic_nerf` 模块实现了一个轻量级语义 NeRF。
+
+#### 语义 3DGS：
+
+类似地，可在每个高斯上附加语义 logits，渲染语义图并用 2D 标签监督。 由于几何与颜色已由基础 3DGS 学得，语义头的训练可以在冻结几何与 RGB 的条件下进行， 从而提高优化稳定性。
+
+# 统一静态场景状态与世界模型视角
+
+为了在世界模型实验中复用同一真实场景，本仓库通过 *静态场景状态（Scene State）* 将多种表示统一到一个 JSON 描述中， 例如 `mipnerf360/db/playroom/world_state.playroom.json`。 其核心思想包括：
+
+- 统一的场景 ID、根目录与世界坐标系说明；
+
+- 集中记录 `COLMAP`、`Nerfstudio/NeRF`、 `3DGS` 与 `semantics` 各自的数据与模型路径；
+
+- 通过 `SceneState` 与 `SemanticScene` 等数据结构， 提供按类别、按 3D 区域、按点的可查询接口。
+
+从更宏观的角度看，*几何层保证物理一致性，辐射场层保证真实感， 显式层保证效率与可编辑性，语义层与 Scene State 则将这些表示组织成统一的世界记忆单元*。 这正是面向世界模型的 3D/360 重建技术路径的核心理念。
+
+# 结语
+
+本文以 `3D_Reconstruction_ing` 仓库为背景，围绕几何、辐射场、显式高斯表示与语义层， 梳理了从传统三维重建走向世界模型的关键数学原理与算法框架。 配合工程实践文档（另见配套的工程实现教程 LaTeX文档）， 读者可以一方面从理论上理解各层组件的角色与联系， 另一方面在真实数据集（如 Mip-NeRF 360）上动手打通整条 Pipeline。

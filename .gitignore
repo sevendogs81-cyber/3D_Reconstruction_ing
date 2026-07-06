@@ -18,3 +18,9 @@ mipnerf360/**/my_practice_output/
 # 语义 3DGS / NeRF 训练输出（体积较大，按需保留本地）
 semantic_3dgs_runs/
 semantic_nerf_runs/
+
+# LaTeX 编译中间产物（PDF 与 .md 由 docs/build_docs.py 生成后可提交）
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc

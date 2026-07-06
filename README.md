@@ -20,8 +20,9 @@
 ├── env/
 │   └── worldrecon.yml            # Nerfstudio + gsplat 等完整环境（conda）
 ├── docs/
-│   ├── 文献综述_3D_与_全景重建.md          # 3D/360 重建 & 世界模型技术路径
-│   └── COLMAP_与_Nerfstudio_教程.md       # COLMAP → Nerfstudio 实践手册（含语义层）
+│   ├── review_world_model_theory.tex/.md   # 理论综述（几何 / NeRF / 3DGS / 语义）
+│   ├── review_world_model_engineering.tex/.md  # 工程实践（COLMAP → Nerfstudio → 语义）
+│   └── build_docs.py                     # 从 .tex 编译 PDF 并导出 Markdown
 ├── mipnerf360/                   # 示例数据（如 db/drjohnson、db/playroom 等）
 ├── scripts/                      # 语义标注、训练与渲染脚本
 │   ├── run_semantic_labeling.py  # 2D 分割 + 可选 3D 点语义融合
@@ -39,7 +40,7 @@
 
 当前已实现重点：
 
-- **文档**：`docs/COLMAP_与_Nerfstudio_教程.md` 覆盖 COLMAP 稀疏/稠密、Nerfstudio（nerfacto / splatfacto）、以及第九节语义层（2D 标注、3D 融合、语义 NeRF/3DGS 训练与渲染）；`docs/文献综述_3D_与_全景重建.md` 梳理技术路径与扩展方向。
+- **文档**：`docs/review_world_model_engineering.md` 覆盖 COLMAP 稀疏/稠密、Nerfstudio（nerfacto / splatfacto）、语义层（2D 标注、3D 融合、语义 NeRF/3DGS 训练与渲染）；`docs/review_world_model_theory.md` 梳理技术路径与数学原理。源文件为同名 `.tex`，可用 `python docs/build_docs.py` 重新编译 PDF 并导出 Markdown。
 - **语义 pipeline**：`run_semantic_labeling.py` → `label_maps/` + 可选 `semantic_scene.json`；语义 NeRF（`train_semantic_nerf.py` / `render_semantic_nerf.py`）；语义 3DGS（先 `ns-train splatfacto`，再 `train_semantic_3dgs.py` / `render_semantic_3dgs.py`），详见教程 §9.6。
 
 ---
@@ -91,7 +92,7 @@ conda activate worldrecon
 
 ## 从 COLMAP 到 Nerfstudio 的推荐实践路径
 
-详细步骤请阅读 `docs/COLMAP_与_Nerfstudio_教程.md`，这里给一个**高度概括**，方便你建立整体印象：
+详细步骤请阅读 `docs/review_world_model_engineering.md`，这里给一个**高度概括**，方便你建立整体印象：
 
 1. **准备数据（以 Mip-NeRF 360 为例）**
    - 将某个场景（如 `db/drjohnson`）放到 `mipnerf360/` 目录下；
@@ -136,7 +137,7 @@ conda activate worldrecon
 - `scene_state`：`SceneState`、`load_scene_state` / `save_scene_state`、`example_playroom_state`；
 - `semantics`：`SemanticScene`、`load_semantic_scene` / `save_semantic_scene`，以及按类别/区域/点的查询 API（`query_by_class`、`query_region`、`get_semantic_at_point`）。
 
-运行 `scripts/run_semantic_labeling.py` 可为场景生成 2D 语义与可选 3D 点语义，详见 `docs/COLMAP_与_Nerfstudio_教程.md` 第九节；语义 3DGS 为先 splatfacto 再挂语义头，见该节 9.6。
+运行 `scripts/run_semantic_labeling.py` 可为场景生成 2D 语义与可选 3D 点语义，详见 `docs/review_world_model_engineering.md` 语义 Pipeline 章节；语义 3DGS 为先 splatfacto 再挂语义头，见该文档语义 3DGS 小节。
 
 这样，你可以把 **COLMAP poses → Nerfstudio / NeRF → 3DGS → 语义层** 的所有中间结果，都纳入到一个统一的“世界记忆单元”中，后续无论做渲染、编辑还是语义查询，都只需先加载 `SceneState`。
 

@@ -50,10 +50,10 @@ cd /home/wenhanxiao/code/3D_Reconstruction_ing
 ├── env/
 │   └── worldrecon.yml            # Nerfstudio + gsplat 等完整环境
 ├── docs/
-│   ├── 文献综述_3D_与_全景重建.md
-│   ├── COLMAP_与_Nerfstudio_教程.md
-│   ├── review_world_model_theory.tex      # 本文配套的理论综述
-│   └── review_world_model_engineering.tex # 本文（工程实践指南）
+│   ├── review_world_model_theory.tex      # 理论综述（源文件）
+│   ├── review_world_model_theory.md       # 理论综述（Markdown 导出）
+│   ├── review_world_model_engineering.tex # 工程实践指南（源文件）
+│   └── review_world_model_engineering.md  # 工程实践指南（Markdown 导出）
 ├── mipnerf360/
 │   └── db/
 │       └── drjohnson/            # 示例场景（可扩展为 playroom 等）
@@ -137,8 +137,7 @@ SCENE_ROOT=$DATA_ROOT/$SCENE_NAME
 
 \section{COLMAP 几何重建实践}
 
-本节给出基于命令行的 COLMAP 标准 Pipeline，
-与文档 \texttt{COLMAP\_与\_Nerfstudio\_教程.md} 的几何部分对应。
+本节给出基于命令行的 COLMAP 标准 Pipeline。
 
 \subsection{创建 COLMAP 工程与特征提取}
 
